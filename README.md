@@ -1,4 +1,4 @@
-# ISP-Goggles
+# ISPGoggles
 
 A tool that test your internet speed with and compare it with OOKLA speedtest
 
@@ -18,7 +18,7 @@ Prerequisites
 
    Clone the repository and install dependencies:
    ```
-   git clone https://github.com/alhaymex/ISP-Goggles.git
+   git clone https://github.com/alhaymex/ISPGoggles.git
    ```
    ```
    bun install 
@@ -35,12 +35,12 @@ Prerequisites
 
    Build the image:
    ```
-   docker build -t isp-goggles .
+   docker build -t ispgoggles .
    ```
 
    Run the container:
    ```
-   docker run -it --rm isp-goggles
+   docker run -it --rm ispgoggles
    ```
 
 ## configuration
