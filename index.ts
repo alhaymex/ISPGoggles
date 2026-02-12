@@ -146,145 +146,97 @@ const main = async () => {
   const ooklaDown: number[] = [];
   const ooklaUp: number[] = [];
 
-  console.log("=== net-bias-check (Bun + TS) ===");
-  console.log(`Rounds: ${CONFIG.rounds}`);
+  console.log("┌─────────────────────────────────────────────────────────┐");
+  console.log("│                🥽     ISPGoggles                        │");
+  console.log("│       Detecting Speedtest Traffic Prioritization        │");
+  console.log("└─────────────────────────────────────────────────────────┘");
+
   console.log(
-    `Non-Speedtest: ${CONFIG.nonSpeedtest.secondsPerRound}s | parallel=${CONFIG.nonSpeedtest.parallel} | chunk=${(CONFIG.nonSpeedtest.chunkBytes / (1024 * 1024)).toFixed(1)} MiB`,
+    `📡 Config: ${CONFIG.rounds} rounds | ${CONFIG.nonSpeedtest.parallel} parallel streams`,
   );
   console.log(
-    `Speedtest: ${CONFIG.speedtest.enabled ? "enabled" : "disabled"}`,
+    `🔗 Target: ${CONFIG.nonSpeedtest.urls.length} non-prioritized endpoints`,
   );
-  console.log("");
+  console.log(
+    `🛠️  Speedtest CLI: ${CONFIG.speedtest.enabled ? "ACTIVE" : "DISABLED"}`,
+  );
+  console.log("─".repeat(58));
 
   for (let i = 1; i <= CONFIG.rounds; i++) {
-    console.log(`--- Round ${i}/${CONFIG.rounds} ---`);
+    process.stdout.write(
+      `\r[Round ${i}/${CONFIG.rounds}] Testing raw throughput...`,
+    );
 
     const nonMbps = await measureNonSpeedtestMbps(CONFIG.nonSpeedtest);
     non.push(nonMbps);
-    console.log(`Non-Speedtest download: ${nonMbps.toFixed(2)} Mbps`);
+
+    process.stdout.write(
+      `\rRound ${i}/${CONFIG.rounds} | Raw: ${nonMbps.toFixed(2).padStart(7)} Mbps`,
+    );
 
     if (CONFIG.speedtest.enabled) {
       try {
         const r = await runOoklaSpeedtest(CONFIG.speedtest);
         ooklaDown.push(r.downloadMbps);
         ooklaUp.push(r.uploadMbps);
-
-        console.log(`Ookla download:        ${r.downloadMbps.toFixed(2)} Mbps`);
-        console.log(`Ookla upload:          ${r.uploadMbps.toFixed(2)} Mbps`);
-        if (r.latencyMs != null)
-          console.log(
-            `Latency/Jitter:        ${r.latencyMs} ms / ${r.jitterMs} ms`,
-          );
-        if (r.packetLoss != null)
-          console.log(`Packet loss:           ${r.packetLoss}%`);
-        if (r.server) console.log(`Server:                ${r.server}`);
-        if (r.isp) console.log(`ISP (reported):         ${r.isp}`);
-      } catch (e: any) {
-        console.log(
-          `Ookla speedtest failed this round: ${e?.message ?? String(e)}`,
+        process.stdout.write(
+          ` | Ookla: ${r.downloadMbps.toFixed(2).padStart(7)} Mbps\n`,
         );
+      } catch (e: any) {
+        console.log(`\n❌ Ookla failed: ${e?.message ?? String(e)}`);
       }
+    } else {
+      console.log("");
     }
 
     if (i !== CONFIG.rounds) {
-      console.log(`Resting ${CONFIG.restSecondsBetween}s...\n`);
       await Bun.sleep(CONFIG.restSecondsBetween * 1000);
     }
   }
 
-  console.log("\n=== Summary ===");
+  const nonAvg = mean(non);
+  const nonStd = stdev(non);
+
+  console.log("\n" + "═".repeat(58));
+  console.log("📊 FINAL VERDICT");
+  console.log("═".repeat(58));
+
   console.log(
-    `Non-Speedtest avg:   ${mean(non).toFixed(2)} Mbps (σ=${stdev(non).toFixed(2)})`,
+    `Real-World Avg:    ${nonAvg.toFixed(2).padStart(8)} Mbps  (Stability σ=${nonStd.toFixed(2)})`,
   );
 
   if (ooklaDown.length) {
-    const nonAvg = mean(non);
-    const nonStd = stdev(non);
-
     const ooklaAvg = mean(ooklaDown);
     const ooklaStd = stdev(ooklaDown);
-
-    const ooklaUpAvg = mean(ooklaUp);
-    const ooklaUpStd = stdev(ooklaUp);
-
     const ratio = ooklaAvg / Math.max(1e-9, nonAvg);
 
     console.log(
-      `Ookla down avg:      ${ooklaAvg.toFixed(2)} Mbps (σ=${ooklaStd.toFixed(2)})`,
+      `Ookla Down Avg:    ${ooklaAvg.toFixed(2).padStart(8)} Mbps  (Stability σ=${ooklaStd.toFixed(2)})`,
     );
     console.log(
-      `Ookla up avg:        ${ooklaUpAvg.toFixed(2)} Mbps (σ=${ooklaUpStd.toFixed(2)})`,
+      `Traffic Bias:      ${ratio.toFixed(2).padStart(8)}x speed boost detected`,
     );
-    console.log(`Ratio (Ookla/Non):   ${ratio.toFixed(2)}x`);
+    console.log("─".repeat(58));
 
-    // Analytics
-
-    console.log("\n=== Analysis ===");
-
-    const nonRelStd = nonStd / Math.max(1e-9, nonAvg);
-    const ooklaRelStd = ooklaStd / Math.max(1e-9, ooklaAvg);
-
-    // Ratio signal
-    if (ratio >= 3) {
+    // Analysis
+    if (ratio >= 2) {
       console.log(
-        "🚨 Very strong signal of traffic prioritization or shaping.",
+        "🚨 RESULT: HIGH BIAS. Your ISP is likely prioritizing Speedtest.",
       );
-      console.log(
-        `   Speedtest traffic is ~${ratio.toFixed(2)}x faster than normal HTTPS traffic.`,
-      );
-    } else if (ratio >= 2) {
-      console.log(
-        "⚠️ Strong signal of possible traffic prioritization or QoS differences.",
-      );
-      console.log(`   Speedtest traffic is ~${ratio.toFixed(2)}x faster.`);
-    } else if (ratio >= 1.5) {
-      console.log(
-        "⚠️ Mild signal of possible prioritization or routing differences.",
-      );
-      console.log(`   Speedtest traffic is ~${ratio.toFixed(2)}x faster.`);
+    } else if (ratio >= 1.3) {
+      console.log("⚠️  RESULT: MILD BIAS. Possible traffic shaping detected.");
     } else {
-      console.log(
-        "✅ No strong evidence of prioritization based on throughput ratio.",
-      );
+      console.log("✅ RESULT: NEUTRAL. No significant prioritization found.");
     }
 
-    // Stability pattern
-    if (nonRelStd > 0.08 && ooklaRelStd < 0.02) {
+    if (nonStd > ooklaStd * 3) {
       console.log(
-        "📉 Non-speedtest traffic is unstable while speedtest traffic is very stable.",
-      );
-      console.log(
-        "   This pattern often indicates QoS classification or managed traffic lanes.",
-      );
-    } else if (nonRelStd > 0.08) {
-      console.log("📉 Non-speedtest traffic shows noticeable instability.");
-    }
-
-    if (ooklaRelStd < 0.01) {
-      console.log(
-        "📈 Speedtest traffic is extremely stable (very low variance).",
+        "📉 PATTERN: Real traffic is significantly more jittery than benchmarks.",
       );
     }
-
-    if (ratio > 3 && ooklaRelStd < nonRelStd) {
-      console.log(
-        "🧠 Pattern strongly matches known ISP speedtest prioritization behavior.",
-      );
-    }
-
-    console.log("\nSummary:");
-    console.log(
-      `   Non-Speedtest: ${nonAvg.toFixed(2)} Mbps ± ${nonStd.toFixed(2)}`,
-    );
-    console.log(
-      `   Speedtest:     ${ooklaAvg.toFixed(2)} Mbps ± ${ooklaStd.toFixed(2)}`,
-    );
-    console.log(`   Ratio:         ${ratio.toFixed(2)}x`);
-  } else {
-    console.log(
-      "No Ookla results collected. Install Ookla `speedtest` CLI or disable it in CONFIG.speedtest.enabled.",
-    );
   }
+
+  console.log("═".repeat(58));
 };
 
 main().catch((err) => {
